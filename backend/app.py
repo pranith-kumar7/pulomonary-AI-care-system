@@ -18,7 +18,7 @@ CORS(app)
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 MODEL_PATH = "densenet121_covid_final.keras"
-OPENROUTER_API_KEY = "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"   # ← paste your key here
+OPENROUTER_API_KEY = "# ← paste your key here"
 
 CLASSES = ["COVID", "Lung_Opacity", "Normal", "Viral Pneumonia"]
 DISPLAY_NAMES = {
