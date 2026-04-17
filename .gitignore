@@ -1,1 +1,7 @@
-data/ 
+data/
+backend/__pycache__/
+backend/pulmoai_auth.db
+pulmoai/node_modules/
+pulmoai/dist/
+.env
+.env.*
