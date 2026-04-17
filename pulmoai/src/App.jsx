@@ -450,6 +450,7 @@ const AuthScreen = ({
   authForm,
   setAuthForm,
   authError,
+  authMessage,
   authLoading,
   onSubmit,
 }) => {
@@ -597,6 +598,19 @@ const AuthScreen = ({
               </div>
             )}
 
+            {authMessage && !authError && (
+              <div style={{
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: `${COLORS.success}18`,
+                border: `1px solid ${COLORS.success}44`,
+                color: COLORS.success,
+                fontSize: 13,
+              }}>
+                {authMessage}
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={authLoading}
@@ -631,6 +645,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
@@ -692,6 +707,7 @@ export default function App() {
     setCurrentUser(user);
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token }));
     setAuthError("");
+    setAuthMessage("");
   }, []);
 
   const clearSession = useCallback(() => {
@@ -776,6 +792,7 @@ export default function App() {
     if (!currentUser) {
       setAuthMode("signin");
       setAuthError("");
+      setAuthMessage("");
       setPage("auth");
       return;
     }
@@ -786,6 +803,7 @@ export default function App() {
     event.preventDefault();
     setAuthSubmitting(true);
     setAuthError("");
+    setAuthMessage("");
 
     try {
       const path = authMode === "signin" ? "/auth/signin" : "/auth/signup";
@@ -793,9 +811,15 @@ export default function App() {
         ? { email: authForm.email, password: authForm.password }
         : authForm;
       const data = await authRequest(path, "POST", payload);
-      persistSession(data.token, data.user);
-      setAuthForm({ fullName: "", email: "", password: "" });
-      setPage("app");
+      if (authMode === "signup") {
+        setAuthMode("signin");
+        setAuthForm({ fullName: "", email: authForm.email, password: "" });
+        setAuthMessage("Sign-up successful. Please sign in to continue.");
+      } else {
+        persistSession(data.token, data.user);
+        setAuthForm({ fullName: "", email: "", password: "" });
+        setPage("landing");
+      }
     } catch (error) {
       setAuthError(error.message);
     } finally {
@@ -813,6 +837,7 @@ export default function App() {
     } finally {
       clearSession();
       setPage("auth");
+      setAuthMessage("");
       reset();
     }
   };
@@ -1092,6 +1117,7 @@ export default function App() {
         authForm={authForm}
         setAuthForm={setAuthForm}
         authError={authError}
+        authMessage={authMessage}
         authLoading={authSubmitting}
         onSubmit={handleAuthSubmit}
       />
@@ -1107,6 +1133,7 @@ export default function App() {
         authForm={authForm}
         setAuthForm={setAuthForm}
         authError={authError}
+        authMessage={authMessage}
         authLoading={authSubmitting}
         onSubmit={handleAuthSubmit}
       />
@@ -1195,6 +1222,22 @@ export default function App() {
         <p style={{ fontSize: 16, color: COLORS.muted, maxWidth: 560, margin: "0 auto 40px", lineHeight: 1.7 }}>
           PulmoAI turns a chest X-ray into a clear result, a focused image view, and a polished report your team can review in one place.
         </p>
+        {currentUser && (
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 18px",
+            marginBottom: 28,
+            borderRadius: 999,
+            background: `${COLORS.success}14`,
+            border: `1px solid ${COLORS.success}40`,
+            color: COLORS.success,
+            fontSize: 13,
+          }}>
+            Signed in as {currentUser.fullName}
+          </div>
+        )}
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
           <button onClick={() => openProtectedPage("app")} style={{
             background: `linear-gradient(135deg, ${COLORS.accent2}, ${COLORS.accent})`,
