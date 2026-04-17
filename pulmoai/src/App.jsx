@@ -1146,7 +1146,45 @@ export default function App() {
       <div style={{ maxWidth: 1024, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 24 }}>
           <button onClick={() => setPage("landing")} style={{ background: "transparent", border: `1px solid ${COLORS.border}`, color: COLORS.muted, padding: "10px 16px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit" }}>Back To Home</button>
-          <button onClick={() => openProtectedPage("app")} style={{ background: `linear-gradient(135deg, ${COLORS.accent2}, ${COLORS.accent})`, border: "none", color: "#fff", padding: "10px 18px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit" }}>Open Analysis Workspace</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {currentUser ? (
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "8px 14px",
+              borderRadius: 999,
+              border: `1px solid ${COLORS.border}`,
+              background: `${COLORS.panel}cc`,
+              color: COLORS.text,
+              fontSize: 12,
+            }}>
+              <div style={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: `linear-gradient(135deg, ${COLORS.accent2}, ${COLORS.accent})`,
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: 11,
+              }}>
+                {currentUser.fullName?.trim()?.charAt(0)?.toUpperCase() || "U"}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ color: COLORS.muted, fontSize: 10, letterSpacing: 1, textTransform: "uppercase" }}>Profile</span>
+                <span>{currentUser.fullName}</span>
+              </div>
+            </div>
+          ) : null}
+          <button onClick={() => currentUser ? openProtectedPage("app") : setPage("auth")} style={{
+            background: `linear-gradient(135deg, ${COLORS.accent2}, ${COLORS.accent})`,
+            border: "none", color: "#fff", padding: "10px 24px", borderRadius: 6,
+            cursor: "pointer", fontSize: 12, fontWeight: 500, fontFamily: "inherit", letterSpacing: 0.5,
+          }}>{currentUser ? "Open Workspace" : "Get Started"}</button>
+        </div>
         </div>
         <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 20, padding: 28 }}>
           <div style={{ fontSize: 10, color: COLORS.muted, letterSpacing: 2, textTransform: "uppercase" }}>Product Guide</div>
