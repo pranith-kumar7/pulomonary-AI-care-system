@@ -1260,22 +1260,6 @@ export default function App() {
         <p style={{ fontSize: 16, color: COLORS.muted, maxWidth: 560, margin: "0 auto 40px", lineHeight: 1.7 }}>
           PulmoAI turns a chest X-ray into a clear result, a focused image view, and a polished report your team can review in one place.
         </p>
-        {currentUser && (
-          <div style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "10px 18px",
-            marginBottom: 28,
-            borderRadius: 999,
-            background: `${COLORS.success}14`,
-            border: `1px solid ${COLORS.success}40`,
-            color: COLORS.success,
-            fontSize: 13,
-          }}>
-            Signed in as {currentUser.fullName}
-          </div>
-        )}
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
           <button onClick={() => openProtectedPage("app")} style={{
             background: `linear-gradient(135deg, ${COLORS.accent2}, ${COLORS.accent})`,
