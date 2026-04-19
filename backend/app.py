@@ -226,6 +226,8 @@ def logout():
     return jsonify({"message": "Logged out successfully"}), 200
 
 
+@app.route("/predict", methods=["POST", "OPTIONS"])
+@require_auth
 def predict():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
