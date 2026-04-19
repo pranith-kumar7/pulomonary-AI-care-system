@@ -13,6 +13,7 @@ import tensorflow as tf
 from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 from PIL import Image
+from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -20,6 +21,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 matplotlib.use("Agg")
 
 BASE_DIR = os.path.dirname(__file__)
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 MODEL_PATH = os.path.join(BASE_DIR, "densenet121_covid_final.keras")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 MONGODB_URI = os.getenv("MONGODB_URI", "")
@@ -30,6 +32,7 @@ PORT = int(os.getenv("PORT", "5000"))
 app = Flask(__name__)
 CORS(
     app,
+    supports_credentials=True,
     resources={r"/*": {"origins": [origin.strip() for origin in FRONTEND_ORIGIN.split(",")]}}
     if FRONTEND_ORIGIN != "*"
     else {r"/*": {"origins": "*"}},
@@ -105,6 +108,9 @@ def get_authenticated_user():
 def require_auth(route_handler):
     @wraps(route_handler)
     def wrapper(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return app.make_default_options_response()
+
         user_document, token = get_authenticated_user()
         if not user_document:
             return jsonify({"error": "Authentication required"}), 401

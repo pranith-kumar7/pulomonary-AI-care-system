@@ -5,4 +5,5 @@ numpy
 pillow
 matplotlib
 pymongo
+python-dotenv
 gunicorn

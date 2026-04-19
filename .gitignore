@@ -1,7 +1,12 @@
 data/
 backend/__pycache__/
+backend/.env
 backend/pulmoai_auth.db
+backend/.venv/
 pulmoai/node_modules/
 pulmoai/dist/
+pulmoai/.env
+pulmoai/src/*.keras
+pulmoai/src/*.h5
 .env
 .env.*
