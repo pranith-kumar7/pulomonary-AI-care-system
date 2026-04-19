@@ -226,56 +226,50 @@ def logout():
     return jsonify({"message": "Logged out successfully"}), 200
 
 
-@app.route("/predict", methods=["POST"])
-@require_auth
 def predict():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["file"]
-    img = Image.open(file.stream).convert("RGB")
-    img_resized = img.resize((224, 224))
-    img_array = np.array(img_resized) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
+    print(f"Processing file: {file.filename}")
 
-    preds = model.predict(img_array)[0]
-    pred_index = int(np.argmax(preds))
-    pred_class = CLASSES[pred_index]
-
-    gradcam_b64 = None
     try:
-        heatmap = get_gradcam_heatmap(model, img_array, pred_index)
-        if heatmap is not None:
-            original_arr = np.array(img_resized)
-            overlaid = overlay_gradcam(original_arr, heatmap)
-            pil_img = Image.fromarray(overlaid)
-            buffer = io.BytesIO()
-            pil_img.save(buffer, format="PNG")
-            gradcam_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    except Exception as exc:
-        print(f"Grad-CAM generation failed: {exc}")
+        img = Image.open(file.stream).convert("RGB")
+        img_resized = img.resize((224, 224))
+        img_array = np.array(img_resized) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)
 
-    findings = []
-    for index, class_name in enumerate(CLASSES):
-        findings.append(
+        print("Running model prediction...")
+        preds = model.predict(img_array)[0]
+        pred_index = int(np.argmax(preds))
+        pred_class = CLASSES[pred_index]
+
+        print(f"Prediction complete: {pred_class}")
+
+        # Simplified response without Grad-CAM to reduce memory usage
+        findings = []
+        for index, class_name in enumerate(CLASSES):
+            findings.append(
+                {
+                    "name": DISPLAY_NAMES[class_name],
+                    "confidence": f"{float(preds[index]):.4f}",
+                    "severity": SEVERITY[class_name],
+                    "predicted": index == pred_index,
+                }
+            )
+
+        return jsonify(
             {
-                "name": DISPLAY_NAMES[class_name],
-                "confidence": f"{float(preds[index]):.4f}",
-                "severity": SEVERITY[class_name],
-                "predicted": index == pred_index,
+                "predicted": DISPLAY_NAMES[pred_class],
+                "predicted_class_display": DISPLAY_NAMES[pred_class],
+                "confidence": float(preds[pred_index]),
+                "findings": findings,
+                "model_version": "DenseNet121-COVID-v1.0",
             }
         )
-
-    return jsonify(
-        {
-            "predicted": DISPLAY_NAMES[pred_class],
-            "predicted_class_display": DISPLAY_NAMES[pred_class],
-            "confidence": float(preds[pred_index]),
-            "findings": findings,
-            "gradcam": gradcam_b64,
-            "model_version": "DenseNet121-COVID-v1.0",
-        }
-    )
+    except Exception as e:
+        print(f"Prediction error: {str(e)}")
+        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
 
 @app.route("/ai-advice", methods=["POST"])
