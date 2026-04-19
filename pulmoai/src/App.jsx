@@ -642,6 +642,7 @@ export default function App() {
   const [authForm, setAuthForm] = useState({ fullName: "", email: "", password: "" });
   const [authToken, setAuthToken] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -660,12 +661,24 @@ export default function App() {
   const featuresRef = useRef(null);
   const modelRef = useRef(null);
   const aboutRef = useRef(null);
+  const profileMenuRef = useRef(null);
 
   useEffect(() => {
     return () => {
       if (imageUrl) URL.revokeObjectURL(imageUrl);
     };
   }, [imageUrl]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (!profileMenuRef.current?.contains(event.target)) {
+        setShowProfileMenu(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
 
   useEffect(() => {
     const storedSession = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -789,6 +802,7 @@ export default function App() {
   };
 
   const openProtectedPage = useCallback((targetPage = "app") => {
+    setShowProfileMenu(false);
     if (!currentUser) {
       setAuthMode("signin");
       setAuthError("");
@@ -835,6 +849,7 @@ export default function App() {
     } catch {
       // Best effort logout.
     } finally {
+      setShowProfileMenu(false);
       clearSession();
       setPage("auth");
       setAuthMessage("");
@@ -1218,7 +1233,7 @@ export default function App() {
 
       <nav style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        padding: "20px 48px", borderBottom: `1px solid ${COLORS.border}`,
+        padding: "20px 28px", borderBottom: `1px solid ${COLORS.border}`,
         background: "rgba(6,13,26,0.8)", backdropFilter: "blur(12px)",
         position: "sticky", top: 0, zIndex: 100,
       }}>
@@ -1230,19 +1245,104 @@ export default function App() {
           }}>🫁</div>
           <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 800, letterSpacing: -0.5 }}>PulmoAI</span>
         </div>
-        <div style={{ display: "flex", gap: 32, fontSize: 12, color: COLORS.muted }}>
-          {[["Features", featuresRef], ["Highlights", modelRef], ["About", aboutRef]].map(([l, ref]) => (
-            <span key={l} style={{ cursor: "pointer", transition: "color 0.2s" }}
-              onClick={() => goToSection(ref)}
-              onMouseEnter={e => e.target.style.color = COLORS.accent}
-              onMouseLeave={e => e.target.style.color = COLORS.muted}>{l}</span>
-          ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <div style={{ display: "flex", gap: 32, fontSize: 12, color: COLORS.muted }}>
+            {[["Features", featuresRef], ["Highlights", modelRef], ["About", aboutRef]].map(([l, ref]) => (
+              <span key={l} style={{ cursor: "pointer", transition: "color 0.2s" }}
+                onClick={() => goToSection(ref)}
+                onMouseEnter={e => e.target.style.color = COLORS.accent}
+                onMouseLeave={e => e.target.style.color = COLORS.muted}>{l}</span>
+            ))}
+          </div>
+          {currentUser ? (
+            <div ref={profileMenuRef} style={{ position: "relative" }}>
+              <button
+                onClick={() => setShowProfileMenu((current) => !current)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 14px",
+                  borderRadius: 999,
+                  border: `1px solid ${showProfileMenu ? COLORS.accent : COLORS.border}`,
+                  background: "rgba(10,22,40,0.92)",
+                  color: COLORS.text,
+                  fontSize: 12,
+                  whiteSpace: "nowrap",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                <div style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: `linear-gradient(135deg, ${COLORS.accent2}, ${COLORS.accent})`,
+                  color: "#fff",
+                  fontFamily: "'Syne', sans-serif",
+                  fontWeight: 800,
+                  fontSize: 12,
+                  flexShrink: 0,
+                }}>
+                  {currentUser.fullName?.trim()?.charAt(0)?.toUpperCase() || "U"}
+                </div>
+                <span>{currentUser.fullName}</span>
+              </button>
+              {showProfileMenu ? (
+                <div style={{
+                  position: "absolute",
+                  top: "calc(100% + 10px)",
+                  right: 0,
+                  minWidth: 240,
+                  padding: 16,
+                  borderRadius: 16,
+                  border: `1px solid ${COLORS.border}`,
+                  background: "rgba(10,22,40,0.98)",
+                  boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}>
+                  <div style={{ fontSize: 10, color: COLORS.muted, letterSpacing: 1.2, textTransform: "uppercase" }}>
+                    Signed In As
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 14, color: COLORS.text, fontWeight: 700 }}>
+                      {currentUser.fullName}
+                    </div>
+                    <div style={{ fontSize: 12, color: COLORS.muted, marginTop: 4 }}>
+                      {currentUser.email}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    style={{
+                      background: "transparent",
+                      border: `1px solid ${COLORS.border}`,
+                      color: COLORS.muted,
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontFamily: "inherit",
+                      textAlign: "left",
+                    }}
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <button onClick={() => openProtectedPage("app")} style={{
+            background: `linear-gradient(135deg, ${COLORS.accent2}, ${COLORS.accent})`,
+            border: "none", color: "#fff", padding: "10px 24px", borderRadius: 6,
+            cursor: "pointer", fontSize: 12, fontWeight: 500, fontFamily: "inherit", letterSpacing: 0.5,
+          }}>{currentUser ? "Open Workspace" : "Launch App ->"}</button>
         </div>
-        <button onClick={() => openProtectedPage("app")} style={{
-          background: `linear-gradient(135deg, ${COLORS.accent2}, ${COLORS.accent})`,
-          border: "none", color: "#fff", padding: "10px 24px", borderRadius: 6,
-          cursor: "pointer", fontSize: 12, fontWeight: 500, fontFamily: "inherit", letterSpacing: 0.5,
-        }}>Launch App →</button>
       </nav>
 
       <div style={{ textAlign: "center", padding: "100px 24px 60px", animation: "fadeUp 0.8s ease" }}>
@@ -1276,7 +1376,7 @@ export default function App() {
 
       <div style={{
         display: "flex", justifyContent: "center", gap: 2, flexWrap: "wrap",
-        padding: "0 24px 80px", maxWidth: 700, margin: "0 auto",
+        padding: "0 20px 80px", maxWidth: 1200, margin: "0 auto",
       }}>
         {[
           { val: "4", label: "Review outcomes" },
@@ -1294,7 +1394,7 @@ export default function App() {
         ))}
       </div>
 
-      <div ref={featuresRef} style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px 100px" }}>
+      <div ref={featuresRef} style={{ maxWidth: 1320, margin: "0 auto", padding: "0 20px 100px" }}>
         <GlowLine />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 1, marginTop: 1 }}>
           {[
@@ -1314,7 +1414,7 @@ export default function App() {
         </div>
       </div>
 
-      <div ref={modelRef} style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px 48px" }}>
+      <div ref={modelRef} style={{ maxWidth: 1320, margin: "0 auto", padding: "0 20px 48px" }}>
         <div style={{
           padding: "28px",
           background: COLORS.panel,
@@ -1338,7 +1438,7 @@ export default function App() {
         </div>
       </div>
 
-      <div ref={aboutRef} style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px 100px" }}>
+      <div ref={aboutRef} style={{ maxWidth: 1320, margin: "0 auto", padding: "0 20px 100px" }}>
         <div style={{
           padding: "28px",
           background: COLORS.panel,
@@ -1351,6 +1451,89 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      <footer style={{
+        borderTop: `1px solid ${COLORS.border}`,
+        background: "rgba(6,13,26,0.8)",
+        padding: "28px 20px 36px",
+      }}>
+        <div style={{
+          maxWidth: 1320,
+          margin: "0 auto",
+          display: "grid",
+          gridTemplateColumns: "minmax(260px, 1.4fr) repeat(2, minmax(180px, 0.8fr))",
+          gap: 24,
+          alignItems: "start",
+        }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                background: `linear-gradient(135deg, ${COLORS.accent2}, ${COLORS.accent})`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 16,
+              }}>L</div>
+              <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 800, letterSpacing: -0.5 }}>
+                PulmoAI
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: COLORS.muted, lineHeight: 1.8, maxWidth: 360 }}>
+              A focused chest X-ray review workspace for fast results, explainability, and structured care guidance.
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 10, color: COLORS.muted, textTransform: "uppercase", letterSpacing: 1.4, marginBottom: 12 }}>
+              Explore
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12 }}>
+              <button onClick={() => goToSection(featuresRef)} style={{ background: "none", border: "none", color: COLORS.text, cursor: "pointer", textAlign: "left", fontFamily: "inherit", padding: 0 }}>
+                Features
+              </button>
+              <button onClick={() => goToSection(modelRef)} style={{ background: "none", border: "none", color: COLORS.text, cursor: "pointer", textAlign: "left", fontFamily: "inherit", padding: 0 }}>
+                Highlights
+              </button>
+              <button onClick={() => goToSection(aboutRef)} style={{ background: "none", border: "none", color: COLORS.text, cursor: "pointer", textAlign: "left", fontFamily: "inherit", padding: 0 }}>
+                About
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 10, color: COLORS.muted, textTransform: "uppercase", letterSpacing: 1.4, marginBottom: 12 }}>
+              Access
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12 }}>
+              <button onClick={() => openProtectedPage("app")} style={{ background: "none", border: "none", color: COLORS.text, cursor: "pointer", textAlign: "left", fontFamily: "inherit", padding: 0 }}>
+                {currentUser ? "Open Workspace" : "Launch App"}
+              </button>
+              <button onClick={() => setPage("docs")} style={{ background: "none", border: "none", color: COLORS.text, cursor: "pointer", textAlign: "left", fontFamily: "inherit", padding: 0 }}>
+                Product Guide
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          maxWidth: 1320,
+          margin: "24px auto 0",
+          paddingTop: 18,
+          borderTop: `1px solid ${COLORS.border}`,
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+          fontSize: 11,
+          color: COLORS.muted,
+        }}>
+          <span>Use alongside qualified clinical judgment.</span>
+          <span>© 2026 PulmoAI</span>
+        </div>
+      </footer>
     </div>
   );
 
