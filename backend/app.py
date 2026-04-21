@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 import os
 import re
 import secrets
@@ -24,6 +25,15 @@ BASE_DIR = os.path.dirname(__file__)
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 MODEL_PATH = os.path.join(BASE_DIR, "densenet121_covid_final.keras")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-3-4b-it:free")
+OPENROUTER_FALLBACK_MODELS = [
+    model_name.strip()
+    for model_name in os.getenv(
+        "OPENROUTER_FALLBACK_MODELS",
+        "meta-llama/llama-3.1-8b-instruct:free,mistralai/mistral-7b-instruct:free",
+    ).split(",")
+    if model_name.strip()
+]
 MONGODB_URI = os.getenv("MONGODB_URI", "")
 MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "pulmoai")
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
@@ -52,6 +62,133 @@ SEVERITY = {
     "Normal": "Low",
     "Viral Pneumonia": "High",
 }
+
+LOCAL_ADVICE_BY_DISEASE = {
+    "Normal": {
+        "summary": "The X-ray pattern appears within normal limits based on the model output. Clinical correlation is still important if symptoms such as fever, chest pain, or shortness of breath are present.",
+        "urgency": "Low",
+        "precautions": [
+            "Continue routine health monitoring and seek care if new respiratory symptoms develop.",
+            "Maintain good hydration and adequate sleep to support overall recovery and wellness.",
+            "Avoid smoking and secondhand smoke exposure.",
+            "Use a mask and hand hygiene in crowded settings if respiratory infections are circulating.",
+            "Keep preventive vaccinations and routine checkups up to date.",
+        ],
+        "medications": [
+            {"name": "No routine medication", "dosage": "As advised", "frequency": "Not routinely needed", "purpose": "No medication is typically needed for a normal study without symptoms."}
+        ],
+        "lifestyle": [
+            "Stay physically active as tolerated.",
+            "Maintain a balanced diet rich in fluids, fruits, and protein.",
+            "Follow up with a clinician if symptoms persist despite a normal image result.",
+        ],
+        "followUp": "Routine follow-up only if symptoms continue or worsen.",
+    },
+    "Lung Opacity": {
+        "summary": "Lung opacity can reflect infection, inflammation, fluid, or other causes and should be interpreted with symptoms and examination findings. A clinician should review the result to determine whether further imaging, oxygen assessment, or treatment is needed.",
+        "urgency": "Moderate",
+        "precautions": [
+            "Seek prompt medical review, especially if you have fever, cough, chest pain, or breathlessness.",
+            "Monitor oxygen saturation if available and seek urgent care for worsening shortness of breath.",
+            "Avoid smoking, vaping, and dusty or polluted environments.",
+            "Rest adequately and limit strenuous activity until reviewed.",
+            "Maintain hydration unless a clinician has advised fluid restriction.",
+        ],
+        "medications": [
+            {"name": "Symptom-directed treatment", "dosage": "As prescribed", "frequency": "As directed", "purpose": "Management depends on whether the opacity is due to infection, inflammation, or another cause."}
+        ],
+        "lifestyle": [
+            "Prioritize rest and breathing comfort.",
+            "Use steam inhalation or humidified air only if comfortable and clinician-approved.",
+            "Keep follow-up imaging or lab appointments if recommended.",
+        ],
+        "followUp": "Arrange clinical review within 24-48 hours, sooner if symptoms are significant or worsening.",
+    },
+    "Viral Pneumonia": {
+        "summary": "The model suggests viral pneumonia, which may cause cough, fever, fatigue, and reduced oxygen levels. Clinical assessment is important to determine severity and whether home care or hospital treatment is needed.",
+        "urgency": "High",
+        "precautions": [
+            "Seek medical evaluation promptly, especially for shortness of breath or persistent fever.",
+            "Check oxygen saturation if available and seek urgent care for low readings or breathing difficulty.",
+            "Rest, isolate if infection is suspected, and use a mask around others.",
+            "Drink fluids regularly unless you have been told to restrict intake.",
+            "Go to emergency care immediately for confusion, bluish lips, or rapidly worsening breathing.",
+        ],
+        "medications": [
+            {"name": "Supportive care", "dosage": "As prescribed", "frequency": "As directed", "purpose": "Treatment often focuses on fever control, hydration, and condition-specific therapy after clinician review."}
+        ],
+        "lifestyle": [
+            "Reduce exertion and allow time for recovery.",
+            "Avoid smoking and alcohol during illness.",
+            "Track temperature, breathing symptoms, and oxygen levels if possible.",
+        ],
+        "followUp": "Same-day clinical review is recommended if symptoms are active; emergency care is needed for worsening breathlessness or low oxygen.",
+    },
+    "COVID-19": {
+        "summary": "The model suggests a pattern concerning for COVID-19-related lung involvement. Severity can vary, so symptoms, oxygen level, and risk factors should guide whether home care, urgent review, or hospital evaluation is needed.",
+        "urgency": "High",
+        "precautions": [
+            "Isolate according to local guidance and wear a mask around others.",
+            "Seek prompt medical care for worsening cough, persistent fever, chest pain, or breathlessness.",
+            "Monitor oxygen saturation if available and seek urgent care for low readings.",
+            "Rest well and maintain hydration unless a clinician advises otherwise.",
+            "Get emergency help for severe shortness of breath, confusion, or bluish lips.",
+        ],
+        "medications": [
+            {"name": "Supportive care", "dosage": "As prescribed", "frequency": "As directed", "purpose": "Clinical treatment depends on symptom severity, timing of illness, and patient risk factors."}
+        ],
+        "lifestyle": [
+            "Rest and avoid strenuous physical activity while symptomatic.",
+            "Use good ventilation at home if isolating.",
+            "Follow clinician advice on testing, antiviral eligibility, and recovery monitoring.",
+        ],
+        "followUp": "Medical review should be arranged promptly if symptoms are present, with urgent care for breathing issues or low oxygen.",
+    },
+}
+
+
+def build_local_advice(disease, confidence):
+    advice = LOCAL_ADVICE_BY_DISEASE.get(disease) or LOCAL_ADVICE_BY_DISEASE["Lung Opacity"]
+    summary_suffix = f" Model confidence was {float(confidence):.1f}%."
+    return {
+        **advice,
+        "summary": f"{advice['summary']}{summary_suffix}",
+        "source": "local-fallback",
+        "disclaimer": "This guidance is generated from predefined clinical safety rules and is not a substitute for a licensed medical evaluation.",
+    }
+
+
+def parse_openrouter_advice(response):
+    try:
+        result = response.json()
+    except ValueError:
+        print(f"OpenRouter returned non-JSON response: {response.text[:500]}")
+        return None, "OpenRouter returned an invalid response", 502
+
+    if "choices" not in result or not result["choices"]:
+        print(f"OpenRouter response missing choices: {result}")
+        error_message = "Unable to generate AI advice"
+        if isinstance(result.get("error"), dict):
+            error_message = result["error"].get("message", error_message)
+        elif result.get("error"):
+            error_message = str(result["error"])
+        return None, error_message, 502
+
+    text = result["choices"][0].get("message", {}).get("content", "")
+    text = re.sub(r"```json|```", "", text).strip()
+    match = re.search(r"\{[\s\S]*\}", text)
+    if not match:
+        print(f"OpenRouter response did not contain JSON: {text[:500]}")
+        return None, "AI advice response was not valid JSON", 502
+
+    advice_json = match.group(0)
+    try:
+        parsed_advice = json.loads(advice_json)
+    except ValueError:
+        print(f"Failed to parse AI advice JSON: {advice_json[:500]}")
+        return None, "AI advice response could not be parsed", 502
+
+    return parsed_advice, None, 200
 
 
 def create_mongo_database():
@@ -277,9 +414,6 @@ def predict():
 @app.route("/ai-advice", methods=["POST"])
 @require_auth
 def ai_advice():
-    if not OPENROUTER_API_KEY:
-        return jsonify({"error": "OPENROUTER_API_KEY is not configured"}), 500
-
     data = request.get_json() or {}
     disease = data.get("disease", "")
     confidence = data.get("confidence", 0)
@@ -325,27 +459,75 @@ For Normal findings provide general wellness advice. For diseases provide clinic
         "HTTP-Referer": FRONTEND_ORIGIN.split(",")[0] if FRONTEND_ORIGIN != "*" else "http://localhost:5173",
         "X-Title": "PulmoAI",
     }
-    body = {
-        "model": "google/gemma-3-4b-it:free",
-        "messages": [{"role": "user", "content": prompt}],
-    }
+    fallback_advice = build_local_advice(disease, confidence)
 
-    response = req.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        json=body,
-        headers=headers,
-        timeout=60,
-    )
-    result = response.json()
+    if not OPENROUTER_API_KEY:
+        return jsonify(
+            {
+                "advice": fallback_advice,
+                "warning": "OPENROUTER_API_KEY is not configured. Returned local fallback guidance.",
+            }
+        )
 
-    if "choices" not in result:
-        return jsonify({"error": str(result)}), 500
+    model_candidates = []
+    for model_name in [OPENROUTER_MODEL, *OPENROUTER_FALLBACK_MODELS]:
+        if model_name and model_name not in model_candidates:
+            model_candidates.append(model_name)
 
-    text = result["choices"][0]["message"]["content"]
-    text = re.sub(r"```json|```", "", text).strip()
-    match = re.search(r"\{[\s\S]*\}", text)
-    advice_json = match.group(0) if match else "{}"
-    return jsonify({"advice": advice_json})
+    last_error = "Unable to generate AI advice"
+    last_status = 502
+
+    for model_name in model_candidates:
+        body = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        try:
+            response = req.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                json=body,
+                headers=headers,
+                timeout=60,
+            )
+            response.raise_for_status()
+        except req.RequestException as exc:
+            status_code = getattr(exc.response, "status_code", 502)
+            response_text = ""
+            if getattr(exc, "response", None) is not None:
+                response_text = exc.response.text[:500]
+            print(f"OpenRouter request failed for model {model_name}: {exc}. Response: {response_text}")
+
+            if status_code == 401:
+                return jsonify({"error": "OpenRouter API key is invalid, expired, or belongs to a deleted account"}), 401
+
+            last_status = status_code
+            if status_code == 429:
+                last_error = f"OpenRouter model '{model_name}' is temporarily rate-limited."
+                continue
+
+            last_error = f"Failed to fetch AI advice from OpenRouter using model '{model_name}'"
+            continue
+
+        parsed_advice, parse_error, parse_status = parse_openrouter_advice(response)
+        if parsed_advice is not None:
+            parsed_advice.setdefault("source", "openrouter")
+            parsed_advice.setdefault(
+                "disclaimer",
+                "AI-generated guidance should be reviewed by a licensed clinician before making medical decisions.",
+            )
+            return jsonify({"advice": parsed_advice, "model": model_name})
+
+        last_error = parse_error or last_error
+        last_status = parse_status
+
+    return jsonify(
+        {
+            "advice": fallback_advice,
+            "warning": (
+                f"{last_error} Returned local fallback guidance after trying: {', '.join(model_candidates)}."
+            ),
+        }
+    ), 200
 
 
 @app.route("/health", methods=["GET"])

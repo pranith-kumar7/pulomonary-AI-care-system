@@ -53,9 +53,12 @@ const callClaudeAPI = async (diseaseName, confidence, allFindings, height, weigh
       weight: weight,
     }),
   });
-  if (!response.ok) throw new Error("AI advice server error");
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || "AI advice server error");
+  }
   const data = await response.json();
-  return JSON.parse(data.advice);
+  return typeof data.advice === "string" ? JSON.parse(data.advice) : data.advice;
 };
 
 const authRequest = async (path, method, payload, token) => {
