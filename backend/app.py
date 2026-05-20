@@ -39,18 +39,12 @@ MONGODB_URI = os.getenv("MONGODB_URI", "")
 MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "pulmoai")
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
 PORT = int(os.getenv("PORT", "5000"))
-DEFAULT_FRONTEND_ORIGINS = [
-    "https://pulomonary-ai-care-system.vercel.app",
-    "https://pulmonary-ai-care-system.vercel.app",
-    "http://localhost:5173",
-]
 
 
 def parse_frontend_origins(origin_value):
     if origin_value == "*":
         return "*"
-    origins = [origin.strip().rstrip("/") for origin in origin_value.split(",") if origin.strip()]
-    return list(dict.fromkeys([*origins, *DEFAULT_FRONTEND_ORIGINS]))
+    return [origin.strip().rstrip("/") for origin in origin_value.split(",") if origin.strip()]
 
 
 FRONTEND_ORIGINS = parse_frontend_origins(FRONTEND_ORIGIN)
