@@ -4,6 +4,7 @@ import json
 import os
 import re
 import secrets
+import traceback
 from functools import wraps
 
 import matplotlib
@@ -13,7 +14,7 @@ import requests as req
 import tensorflow as tf
 from flask import Flask, g, jsonify, request
 from flask_cors import CORS
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
@@ -39,14 +40,39 @@ MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "pulmoai")
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
 PORT = int(os.getenv("PORT", "5000"))
 
+
+def parse_frontend_origins(origin_value):
+    if origin_value == "*":
+        return "*"
+    return [origin.strip().rstrip("/") for origin in origin_value.split(",") if origin.strip()]
+
+
+FRONTEND_ORIGINS = parse_frontend_origins(FRONTEND_ORIGIN)
+
+
+def is_allowed_origin(origin):
+    return FRONTEND_ORIGINS == "*" or origin in FRONTEND_ORIGINS
+
 app = Flask(__name__)
 CORS(
     app,
     supports_credentials=True,
-    resources={r"/*": {"origins": [origin.strip() for origin in FRONTEND_ORIGIN.split(",")]}}
-    if FRONTEND_ORIGIN != "*"
+    resources={r"/*": {"origins": FRONTEND_ORIGINS}}
+    if FRONTEND_ORIGINS != "*"
     else {r"/*": {"origins": "*"}},
 )
+
+
+@app.after_request
+def add_cors_headers(response):
+    origin = (request.headers.get("Origin") or "").rstrip("/")
+    if origin and is_allowed_origin(origin):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
 
 
 CLASSES = ["COVID", "Lung_Opacity", "Normal", "Viral Pneumonia"]
@@ -373,9 +399,17 @@ def predict():
     print(f"Processing file: {file.filename}")
 
     try:
-        img = Image.open(file.stream).convert("RGB")
+        uploaded_bytes = file.read()
+        if not uploaded_bytes:
+            return jsonify({"error": "Uploaded file is empty"}), 400
+
+        try:
+            img = Image.open(io.BytesIO(uploaded_bytes)).convert("RGB")
+        except UnidentifiedImageError:
+            return jsonify({"error": "Unsupported or corrupted image file. Please upload a PNG or JPG chest X-ray."}), 400
+
         img_resized = img.resize((224, 224))
-        img_array = np.array(img_resized) / 255.0
+        img_array = np.array(img_resized, dtype=np.float32) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
 
         print("Running model prediction...")
@@ -408,6 +442,7 @@ def predict():
         )
     except Exception as e:
         print(f"Prediction error: {str(e)}")
+        traceback.print_exc()
         return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
 
@@ -456,7 +491,7 @@ For Normal findings provide general wellness advice. For diseases provide clinic
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": FRONTEND_ORIGIN.split(",")[0] if FRONTEND_ORIGIN != "*" else "http://localhost:5173",
+        "HTTP-Referer": FRONTEND_ORIGINS[0] if FRONTEND_ORIGINS != "*" and FRONTEND_ORIGINS else "http://localhost:5173",
         "X-Title": "PulmoAI",
     }
     fallback_advice = build_local_advice(disease, confidence)
