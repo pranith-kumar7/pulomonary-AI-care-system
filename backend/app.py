@@ -243,17 +243,10 @@ def create_mongo_database():
 
 mongo_db = create_mongo_database()
 
-model = None
-
-
-def get_prediction_model():
-    global model
-    if model is None:
-        print("Loading model...")
-        model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-        model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
-        print("Model loaded")
-    return model
+print("Loading model...")
+model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+print("Model loaded")
 
 
 def serialize_user(user_document):
@@ -432,7 +425,7 @@ def predict():
         img_array = np.expand_dims(img_array, axis=0)
 
         print("Running model prediction...")
-        preds = get_prediction_model().predict(img_array, verbose=0)[0]
+        preds = model.predict(img_array)[0]
         pred_index = int(np.argmax(preds))
         pred_class = CLASSES[pred_index]
 
