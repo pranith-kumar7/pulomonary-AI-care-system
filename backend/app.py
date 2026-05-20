@@ -38,15 +38,46 @@ MONGODB_URI = os.getenv("MONGODB_URI", "")
 MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "pulmoai")
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
 PORT = int(os.getenv("PORT", "5000"))
+DEFAULT_FRONTEND_ORIGINS = [
+    "https://pulomonary-ai-care-system.vercel.app",
+    "https://pulmonary-ai-care-system.vercel.app",
+    "http://localhost:5173",
+]
+
+
+def parse_frontend_origins(origin_value):
+    if origin_value == "*":
+        return "*"
+    origins = [origin.strip().rstrip("/") for origin in origin_value.split(",") if origin.strip()]
+    return list(dict.fromkeys([*origins, *DEFAULT_FRONTEND_ORIGINS]))
+
+
+FRONTEND_ORIGINS = parse_frontend_origins(FRONTEND_ORIGIN)
+
+
+def is_allowed_origin(origin):
+    return FRONTEND_ORIGINS == "*" or origin in FRONTEND_ORIGINS
 
 app = Flask(__name__)
 CORS(
     app,
     supports_credentials=True,
-    resources={r"/*": {"origins": [origin.strip() for origin in FRONTEND_ORIGIN.split(",")]}}
-    if FRONTEND_ORIGIN != "*"
+    resources={r"/*": {"origins": FRONTEND_ORIGINS}}
+    if FRONTEND_ORIGINS != "*"
     else {r"/*": {"origins": "*"}},
 )
+
+
+@app.after_request
+def add_cors_headers(response):
+    origin = (request.headers.get("Origin") or "").rstrip("/")
+    if origin and is_allowed_origin(origin):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
 
 
 CLASSES = ["COVID", "Lung_Opacity", "Normal", "Viral Pneumonia"]
@@ -456,7 +487,7 @@ For Normal findings provide general wellness advice. For diseases provide clinic
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": FRONTEND_ORIGIN.split(",")[0] if FRONTEND_ORIGIN != "*" else "http://localhost:5173",
+        "HTTP-Referer": FRONTEND_ORIGINS[0] if FRONTEND_ORIGINS != "*" and FRONTEND_ORIGINS else "http://localhost:5173",
         "X-Title": "PulmoAI",
     }
     fallback_advice = build_local_advice(disease, confidence)
