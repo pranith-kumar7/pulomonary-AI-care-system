@@ -1,13 +1,13 @@
 import base64
 import io
 import json
-import math
 import os
 import re
 import secrets
 import traceback
 from functools import wraps
 
+import numpy as np
 import requests as req
 from flask import Flask, g, jsonify, request
 from flask_cors import CORS
@@ -251,50 +251,22 @@ def get_prediction_model():
 
 
 def softmax(scores):
-    max_score = max(scores)
-    exp_values = [math.exp(score - max_score) for score in scores]
-    total = sum(exp_values) or 1.0
-    return [value / total for value in exp_values]
+    values = np.array(scores, dtype=np.float32)
+    values = values - np.max(values)
+    exp_values = np.exp(values)
+    return exp_values / np.sum(exp_values)
 
 
-def build_grayscale_pixels(image):
-    width, height = image.size
-    pixels = []
-    for red, green, blue in image.getdata():
-        pixels.append((red * 0.299 + green * 0.587 + blue * 0.114) / 255.0)
-    return pixels, width, height
-
-
-def region_mean(pixels, width, x_start, x_end, y_start, y_end):
-    values = [
-        pixels[y * width + x]
-        for y in range(y_start, y_end)
-        for x in range(x_start, x_end)
-    ]
-    return sum(values) / len(values)
-
-
-def predict_with_lightweight_fallback(image):
-    gray, width, height = build_grayscale_pixels(image)
-    brightness = sum(gray) / len(gray)
-    contrast = math.sqrt(sum((value - brightness) ** 2 for value in gray) / len(gray))
-    lower_lung_density = region_mean(gray, width, 45, 180, 130, 210)
-    upper_lung_density = region_mean(gray, width, 45, 180, 45, 130)
-    left_mean = region_mean(gray, width, 0, width // 2, 0, height)
-    right_mean = region_mean(gray, width, width // 2, width, 0, height)
-    asymmetry = abs(left_mean - right_mean)
-
-    edge_total = 0.0
-    edge_count = 0
-    for y in range(0, height - 1, 2):
-        row = y * width
-        next_row = (y + 1) * width
-        for x in range(0, width - 1, 2):
-            current = gray[row + x]
-            edge_total += abs(current - gray[row + x + 1])
-            edge_total += abs(current - gray[next_row + x])
-            edge_count += 2
-    edge_strength = edge_total / edge_count if edge_count else 0.0
+def predict_with_lightweight_fallback(img_array):
+    gray = img_array.mean(axis=2)
+    brightness = float(gray.mean())
+    contrast = float(gray.std())
+    lower_lung_density = float(gray[130:210, 45:180].mean())
+    upper_lung_density = float(gray[45:130, 45:180].mean())
+    asymmetry = float(abs(gray[:, :112].mean() - gray[:, 112:].mean()))
+    edge_strength = float(
+        np.mean(np.abs(np.diff(gray, axis=0))) + np.mean(np.abs(np.diff(gray, axis=1)))
+    )
 
     covid_score = 0.9 + contrast * 2.4 + edge_strength * 3.0 + max(0, upper_lung_density - brightness) * 2.0
     opacity_score = 0.8 + lower_lung_density * 2.5 + asymmetry * 4.0 + contrast * 1.5
@@ -304,13 +276,10 @@ def predict_with_lightweight_fallback(image):
     return softmax([covid_score, opacity_score, normal_score, pneumonia_score])
 
 
-def predict_image(image):
+def predict_image(img_array):
     if ENABLE_TENSORFLOW_MODEL:
-        import numpy as np
-
-        img_array = np.array(image, dtype=np.float32) / 255.0
         return get_prediction_model().predict(np.expand_dims(img_array, axis=0), verbose=0)[0], "DenseNet121-COVID-v1.0"
-    return predict_with_lightweight_fallback(image), "PulmoAI-lightweight-v1.0"
+    return predict_with_lightweight_fallback(img_array), "PulmoAI-lightweight-v1.0"
 
 
 def serialize_user(user_document):
@@ -359,6 +328,55 @@ def require_auth(route_handler):
         return route_handler(*args, **kwargs)
 
     return wrapper
+
+
+def get_gradcam_heatmap(current_model, img_array, pred_index=None):
+    try:
+        last_conv_layer = None
+        for layer in reversed(current_model.layers):
+            if isinstance(layer, tf.keras.layers.Conv2D):
+                last_conv_layer = layer.name
+                break
+        if last_conv_layer is None:
+            return None
+
+        grad_model = tf.keras.models.Model(
+            inputs=current_model.input,
+            outputs=[current_model.get_layer(last_conv_layer).output, current_model.output],
+        )
+
+        img_tensor = tf.cast(img_array, tf.float32)
+        with tf.GradientTape() as tape:
+            tape.watch(img_tensor)
+            conv_outputs, predictions = grad_model(img_tensor)
+            tape.watch(conv_outputs)
+            class_channel = predictions[:, pred_index]
+
+        grads = tape.gradient(class_channel, conv_outputs)
+        if grads is None:
+            return None
+
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+        conv_outputs = conv_outputs[0]
+        heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+        heatmap = tf.squeeze(heatmap)
+        heatmap = tf.maximum(heatmap, 0) / (tf.math.reduce_max(heatmap) + 1e-8)
+        return heatmap.numpy()
+    except Exception as exc:
+        print(f"Grad-CAM error: {exc}")
+        return None
+
+
+def overlay_gradcam(original_img, heatmap, alpha=0.4):
+    heatmap_resized = np.uint8(255 * heatmap)
+    jet = cm.get_cmap("jet")
+    jet_colors = jet(np.arange(256))[:, :3]
+    jet_heatmap = jet_colors[heatmap_resized]
+    jet_heatmap = tf.keras.preprocessing.image.array_to_img(jet_heatmap)
+    jet_heatmap = jet_heatmap.resize((original_img.shape[1], original_img.shape[0]))
+    jet_heatmap = tf.keras.preprocessing.image.img_to_array(jet_heatmap)
+    superimposed = jet_heatmap * alpha + original_img
+    return np.clip(superimposed, 0, 255).astype(np.uint8)
 
 
 @app.route("/auth/signup", methods=["POST"])
@@ -436,10 +454,11 @@ def predict():
             return jsonify({"error": "Unsupported or corrupted image file. Please upload a PNG or JPG chest X-ray."}), 400
 
         img_resized = img.resize((224, 224))
+        img_array = np.array(img_resized, dtype=np.float32) / 255.0
 
         print("Running model prediction...")
-        preds, model_version = predict_image(img_resized)
-        pred_index = max(range(len(preds)), key=lambda index: preds[index])
+        preds, model_version = predict_image(img_array)
+        pred_index = int(np.argmax(preds))
         pred_class = CLASSES[pred_index]
 
         print(f"Prediction complete: {pred_class}")
