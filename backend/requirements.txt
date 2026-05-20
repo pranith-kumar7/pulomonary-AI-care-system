@@ -1,7 +1,9 @@
 flask
 flask-cors
+tensorflow
 numpy
 pillow
+matplotlib
 pymongo
 python-dotenv
 gunicorn
