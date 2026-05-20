@@ -7,10 +7,6 @@ import secrets
 import traceback
 from functools import wraps
 
-os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ.setdefault("TF_NUM_INTRAOP_THREADS", "1")
-os.environ.setdefault("TF_NUM_INTEROP_THREADS", "1")
-
 import matplotlib
 import matplotlib.cm as cm
 import numpy as np
@@ -25,8 +21,6 @@ from pymongo.server_api import ServerApi
 from werkzeug.security import check_password_hash, generate_password_hash
 
 matplotlib.use("Agg")
-tf.config.threading.set_intra_op_parallelism_threads(1)
-tf.config.threading.set_inter_op_parallelism_threads(1)
 
 BASE_DIR = os.path.dirname(__file__)
 load_dotenv(os.path.join(BASE_DIR, ".env"))
