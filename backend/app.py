@@ -36,48 +36,22 @@ OPENROUTER_FALLBACK_MODELS = [
 ]
 MONGODB_URI = os.getenv("MONGODB_URI", "")
 MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "pulmoai")
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 PORT = int(os.getenv("PORT", "5000"))
-DEFAULT_FRONTEND_ORIGINS = [
-    "https://pulomonary-ai-care-system.vercel.app",
-    "https://pulmonary-ai-care-system.vercel.app",
-    "http://localhost:5173",
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_FRONTEND_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in FRONTEND_ORIGIN.split(",")
+    if origin.strip()
 ]
 
-
-def parse_frontend_origins(origin_value):
-    if origin_value == "*":
-        return "*"
-    origins = [origin.strip().rstrip("/") for origin in origin_value.split(",") if origin.strip()]
-    return list(dict.fromkeys([*origins, *DEFAULT_FRONTEND_ORIGINS]))
-
-
-FRONTEND_ORIGINS = parse_frontend_origins(FRONTEND_ORIGIN)
-
-
-def is_allowed_origin(origin):
-    return FRONTEND_ORIGINS == "*" or origin in FRONTEND_ORIGINS
-
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 CORS(
     app,
     supports_credentials=True,
-    resources={r"/*": {"origins": FRONTEND_ORIGINS}}
-    if FRONTEND_ORIGINS != "*"
-    else {r"/*": {"origins": "*"}},
+    resources={r"/*": {"origins": ALLOWED_FRONTEND_ORIGINS}},
 )
-
-
-@app.after_request
-def add_cors_headers(response):
-    origin = (request.headers.get("Origin") or "").rstrip("/")
-    if origin and is_allowed_origin(origin):
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Vary"] = "Origin"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    return response
 
 
 CLASSES = ["COVID", "Lung_Opacity", "Normal", "Viral Pneumonia"]
@@ -401,9 +375,15 @@ def predict():
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["file"]
-    print(f"Processing file: {file.filename}")
+    if not file.filename:
+        return jsonify({"error": "Please choose an image file"}), 400
 
     try:
+        # Verify the upload is a readable image before model preprocessing.
+        file.stream.seek(0)
+        with Image.open(file.stream) as uploaded_image:
+            uploaded_image.verify()
+        file.stream.seek(0)
         img = Image.open(file.stream).convert("RGB")
         img_resized = img.resize((224, 224))
         img_array = np.array(img_resized) / 255.0
@@ -437,9 +417,11 @@ def predict():
                 "model_version": "DenseNet121-COVID-v1.0",
             }
         )
-    except Exception as e:
-        print(f"Prediction error: {str(e)}")
-        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
+    except (Image.UnidentifiedImageError, OSError, ValueError):
+        return jsonify({"error": "The uploaded file is not a valid readable image"}), 400
+    except Exception:
+        app.logger.exception("Prediction failed")
+        return jsonify({"error": "Prediction failed. Please try another image later."}), 500
 
 
 @app.route("/ai-advice", methods=["POST"])
@@ -471,8 +453,7 @@ Provide a structured clinical response in this exact JSON format only. No markdo
     "Precaution 5"
   ],
   "medications": [
-    {{"name": "Drug name", "dosage": "e.g. 500mg", "frequency": "e.g. twice daily", "purpose": "brief purpose"}},
-    {{"name": "Drug name", "dosage": "...", "frequency": "...", "purpose": "..."}}
+    {{"name": "Clinician review required", "dosage": "Not provided", "frequency": "Not provided", "purpose": "Do not recommend medications or dosages; treatment decisions require a licensed clinician."}}
   ],
   "lifestyle": [
     "Lifestyle recommendation 1",
@@ -482,7 +463,7 @@ Provide a structured clinical response in this exact JSON format only. No markdo
   "followUp": "When and what kind of follow-up is recommended"
 }}
 
-For Normal findings provide general wellness advice. For diseases provide clinically appropriate guidance."""
+Do not diagnose, prescribe, name specific drugs, or recommend dosages. State that any treatment must be decided by a licensed clinician after reviewing the patient. The image model is experimental and may be wrong. For all findings, provide general educational information and encourage clinician review."""
 
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
