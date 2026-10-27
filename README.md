@@ -1,64 +1,77 @@
 # PulmoAI
 
-PulmoAI is a React + Flask chest X-ray review application. This repo is now prepared for:
+PulmoAI is an experimental chest X-ray review application with a React frontend and Flask API. It uses a DenseNet121 model for four-class image classification and can request optional AI-generated explanatory content.
 
-- `MongoDB Atlas` for authentication data
-- `Render` for the Flask backend
-- `Vercel` for the React frontend
+**Important:** This is a portfolio project, not a medical device. Model outputs and generated content are not a diagnosis and must not be used to make treatment decisions.
 
-## Project Layout
+## Project layout
 
-- `backend/` Flask API, model loading, auth, AI advice
-- `pulmoai/` Vite React frontend
+- `backend/` — Flask API, model inference, authentication, and optional AI advice
+- `pulmoai/` — Vite + React frontend
+- `render.yaml` — Render backend service configuration
+- `pulmoai/vercel.json` — Vercel frontend configuration
 
-## Required Environment Variables
+## Environment variables
 
-Backend on Render:
+Configure these on the backend host:
 
-- `MONGODB_URI`
-- `MONGODB_DB_NAME`
-- `OPENROUTER_API_KEY`
-- `FRONTEND_ORIGIN`
+- `MONGODB_URI` — MongoDB connection string
+- `MONGODB_DB_NAME` — database name (defaults to `pulmoai`)
+- `OPENROUTER_API_KEY` — optional key for AI-generated advice
+- `OPENROUTER_MODEL` — optional model override
+- `OPENROUTER_FALLBACK_MODELS` — optional comma-separated fallback models
+- `FRONTEND_ORIGIN` — allowed frontend origin(s)
+- `PORT` — server port (defaults to `5000`)
 
-Frontend on Vercel:
+The backend environment template is [`backend/.env.example`](backend/.env.example). Do not commit real credentials.
 
-- `VITE_API_BASE_URL`
+For the Vite frontend, create a local `pulmoai/.env.local` containing:
 
-Example env files are included at:
+```env
+VITE_API_BASE_URL=http://localhost:5000
+```
 
-- [backend/.env.example](</abs/path/c:/Users/prani/Pulmonary AI care system/backend/.env.example:1>)
-- [pulmoai/.env.example](</abs/path/c:/Users/prani/Pulmonary AI care system/pulmoai/.env.example:1>)
+Set `VITE_API_BASE_URL` to the deployed backend URL in the Vercel project settings.
 
-## Deploy Order
+## Run locally
 
-1. Create a MongoDB Atlas cluster.
-2. Create a database user and copy the Python connection string.
-3. Deploy the backend to Render from this repo using [render.yaml](</abs/path/c:/Users/prani/Pulmonary AI care system/render.yaml:1>).
-4. Set `MONGODB_URI`, `MONGODB_DB_NAME`, `OPENROUTER_API_KEY`, and `FRONTEND_ORIGIN` in Render.
-5. Deploy the frontend from the `pulmoai/` directory to Vercel using [pulmoai/vercel.json](</abs/path/c:/Users/prani/Pulmonary AI care system/pulmoai/vercel.json:1>).
-6. Set `VITE_API_BASE_URL` in Vercel to your Render backend URL.
-7. Update `FRONTEND_ORIGIN` in Render to your final Vercel domain and redeploy if needed.
-
-## Deployment Cleanup Already Applied
-
-- Removed unused frontend model and test artifacts so Vercel only builds the React app.
-- Kept the production model in `backend/densenet121_covid_final.keras` because Render needs it at runtime.
-- Ignored local env files, generated frontend bundles, and stray frontend model files from future commits.
-
-## Local Development
-
-Backend:
+### Backend
 
 ```powershell
 cd backend
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python app.py
 ```
 
-Frontend:
+The API defaults to `http://localhost:5000`. A valid model file and any required database configuration must be available for the relevant features.
+
+### Frontend
+
+In a separate terminal:
 
 ```powershell
 cd pulmoai
 npm install
 npm run dev
 ```
+
+Vite prints the local frontend URL when the development server starts.
+
+## Deployment outline
+
+1. Create a MongoDB database and configure the backend environment variables.
+2. Deploy the `backend/` directory to Render using [`render.yaml`](render.yaml).
+3. Deploy the `pulmoai/` directory to Vercel using [`pulmoai/vercel.json`](pulmoai/vercel.json).
+4. Set `VITE_API_BASE_URL` in Vercel to the deployed API URL.
+5. Set `FRONTEND_ORIGIN` on the backend to the exact deployed frontend origin and verify CORS.
+6. Test authentication, image upload, model inference, and the health endpoint after deployment.
+
+## Model evaluation and limitations
+
+Before making performance claims, document the dataset source, train/validation/test split, preprocessing, class-wise precision/recall/F1, and confusion matrix. Avoid data leakage between splits. Predictions may be wrong and should be reviewed by qualified medical professionals.
+
+## Current limitations
+
+- This README does not claim a verified clinical performance level.
+- AI advice requires a configured external provider; provider responses may be unavailable or incorrect.
+- Deployment status and live endpoints should be verified before sharing as a working demo.
